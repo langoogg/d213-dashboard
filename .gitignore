@@ -1,0 +1,10 @@
+*.o
+dashboard_d213
+build.log
+*.bak
+backup_*
+*.pyc
+__pycache__/
+*.swp
+*~
+/tmp/
