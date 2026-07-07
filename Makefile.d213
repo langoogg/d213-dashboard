@@ -1,0 +1,24 @@
+CC = /home/lh/d211/toolchain/riscv64-linux-glibc-x86_64-V2.10.1/bin/riscv64-unknown-linux-gnu-gcc
+CFLAGS += -Wformat-security -Werror=format-security
+CFLAGS = -Wall -O2 -I. -Idashboard -I/home/lh/d211/output/d211_demo128_nand/host/riscv64-linux-gnu/sysroot/usr/include -DLV_CONF_INCLUDE_SIMPLE -I/home/lh/d211/output/d211_demo128_nand/host/riscv64-linux-gnu/sysroot/usr/local/include 
+LDFLAGS = -s  -L/home/lh/d211/output/d211_demo128_nand/host/riscv64-linux-gnu/sysroot/usr/local/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/usr/local/lib -lmedia_player /home/lh/d211/output/d211_demo128_nand/host/riscv64-linux-gnu/sysroot/usr/lib/libasound.so -lm -lpthread
+
+LVGL_DIR = lvgl
+LVGL_SRC = $(shell find $(LVGL_DIR)/src -name "*.c" ! -path "*/extra/themes/*" ! -name "lv_font_unscii_*.c" ! -name "lv_font_dejavu_*.c" ! -name "lv_font_simsun_*.c" ! -path "*/sdl/*" ! -path "*/arm2d/*" ! -path "*/nxp/*" ! -path "*/renesas/*" ! -path "*/stm32_dma2d/*" ! -path "*/swm341_dma2d/*")
+APP_SRCS = main_fb.c dashboard/dashboard.c dashboard/vehicle_physics.c dashboard/wifi_ctrl.c dashboard/video_ctrl.c dashboard/audio_ctrl.c
+SRCS = $(APP_SRCS) $(LVGL_SRC)
+OBJS = $(SRCS:.c=.o)
+TARGET = dashboard_d213
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJS) $(TARGET)
+.PHONY: all clean
