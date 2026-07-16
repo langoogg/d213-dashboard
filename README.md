@@ -5,9 +5,39 @@
 [![Platform](https://img.shields.io/badge/platform-D211%20RISC--V-blue)]()
 [![OS](https://img.shields.io/badge/os-Buildroot%20Linux%205.10-green)]()
 [![UI](https://img.shields.io/badge/ui-LVGL%20v8.3.10-orange)]()
-[![Status](https://img.shields.io/badge/status-v6.3%20stable-brightgreen)]()
+[![Language](https://img.shields.io/badge/language-C%20100%25-555555)]()
+[![Status](https://img.shields.io/badge/status-v6.4%20stable-brightgreen)]()
+[![License](https://img.shields.io/badge/license-Apache--2.0-lightgrey)]()
 
 A full-stack embedded dashboard system for automotive instrument clusters, built from scratch on a RISC-V SoC. Features 4-mode UI, MPP hardware video decoding, ALSA audio playback, touch gesture recognition, and FIFO-based remote control.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                      UI Layer (LVGL v8)                   │
+│   dashboard.c — 4-mode rendering engine, post_draw_cb     │
+│   ui_config.h — layout macros, button hotspots            │
+├──────────────────────────────────────────────────────────┤
+│                    Display Layer (Framebuffer)             │
+│   /dev/fb0 — 1024×600 BGRA8888, virtual 1024×1200        │
+│   single-buffer local refresh, FBIOPAN page flip          │
+├──────────────────────┬───────────────────────────────────┤
+│   Media Layer (MPP)   │   Media Layer (ALSA)              │
+│   video_ctrl.c        │   audio_ctrl.c                    │
+│   aic_player H.264    │   snd_pcm WAV playback            │
+│   FBIOPAN双缓冲翻页     │   pthread异步播放                 │
+├──────────────────────┴───────────────────────────────────┤
+│                   Driver Layer (Linux Kernel)              │
+│   aic-mpp / gt9xx / snd-usb-audio / rt2800usb / mmc       │
+├──────────────────────────────────────────────────────────┤
+│                    Hardware Layer                          │
+│   ArtInChip D211 SoC (RISC-V 64bit, 600MHz, 128MB DDR3)   │
+│   1024×600 LCD + GT9xx Touch + RT5572 WiFi + SD Card      │
+└──────────────────────────────────────────────────────────┘
+```
 
 ## Hardware
 
@@ -16,78 +46,155 @@ A full-stack embedded dashboard system for automotive instrument clusters, built
 | SoC | ArtInChip D211, RISC-V 64bit (RV64IMAFDC), 600MHz single-core |
 | RAM | 128MB DDR3 (on-chip) |
 | Display | 1024×600 BGRA8888, virtual 1024×1200 (double-buffered) |
-| Touch | Goodix GT9xx I2C3 |
-| Audio | aicSoundCard (ALSA) |
-| WiFi | RT5572 USB (rt2800usb) |
-| Storage | SPI NAND + 64GB SD card |
+| Touch | Goodix GT9xx I2C3 (`/dev/input/event0`) |
+| Audio | aicSoundCard (ALSA, `/dev/snd/pcmC0D0p`) |
+| WiFi | RT5572 USB (rt2800usb, wlan0) |
+| Storage | SPI NAND + 64GB SD card (`/mnt/sdcard`) |
+| Dev Board | D213ECV-DEMO-V4-0 |
+
+> **TODO**: Add wiring diagram / pinout table for display, touch, and audio connections.
 
 ## Features
 
-### Mode 0: Dashboard
-- 4 analog gauges (speed, RPM, fuel, coolant temp)
-- Central info display (digital speed, clock, fuel economy, odometer)
-- 3-page navigation with touch arrows
-- 7-speed DSG transmission physics model
-- 2.4s self-test sweep animation (30FPS)
-- Virtual buttons: turn signals (L/R), gear selector (P/N/D), throttle (+/-)
-- Ignition state machine: OFF → SELF_TEST → START
+### Mode 0: Dashboard `[*]`
+- [x] 4 analog gauges (speed, RPM, fuel, coolant temp)
+- [x] Central info display (digital speed, clock, fuel economy, odometer)
+- [x] 3-page navigation with touch arrows
+- [x] 7-speed DSG transmission physics model
+- [x] 2.4s self-test sweep animation (30FPS)
+- [x] Virtual buttons: turn signals, gear selector, throttle
+- [x] Ignition state machine: OFF → SELF_TEST → START
 
-### Mode 1: Music Player
-- WAV file scanning from SD card
-- ALSA PCM playback with real-time WAV header parsing
-- Playback controls: << prev / ▶ play/pause / >> next
-- Real-time progress bar with elapsed/total time display
-- Auto-advance to next track
-- Supports 8/16/24/32bit, 1-8 channels, arbitrary sample rates
+### Mode 1: Music Player `[*]`
+- [x] WAV file scanning from SD card
+- [x] ALSA PCM playback with real-time header parsing
+- [x] Playback controls: `<<` prev / `▶` play/pause / `>>` next
+- [x] Real-time progress bar with elapsed/total time display
+- [x] Auto-advance to next track
+- [x] Supports 8/16/24/32bit, 1-8 channels, arbitrary sample rates
+- [ ] MP3/FLAC software decode support
 
-### Mode 2: Video Player
-- MPP hardware-accelerated H.264 decoding (aic_player API)
-- FBIOPAN double-buffer page flipping for seamless video overlay
-- Touch bottom 1/6 area to exit playback
-- 120-second timeout protection
-- First-frame timeout with graceful LVGL recovery
+### Mode 2: Video Player `[*]`
+- [x] MPP hardware-accelerated H.264 decoding (aic_player API)
+- [x] FBIOPAN double-buffer page flipping for seamless video overlay
+- [x] Touch bottom 1/6 area to exit playback
+- [x] 120-second timeout protection
+- [x] First-frame timeout with graceful LVGL recovery
+- [ ] True pause/resume (aic_player lacks API)
+- [ ] Video progress bar (MPP lacks duration API)
 
-### Mode 3: WiFi Panel
-- SSID, IP address, signal strength (dBm)
-- Connection rate and frequency band display
-- 2Hz auto-refresh
+### Mode 3: WiFi Panel `[*]`
+- [x] SSID, IP address, signal strength (dBm)
+- [x] Connection rate and frequency band display
+- [x] 2Hz auto-refresh
+- [ ] Hotspot mode support
 
-### System
-- FIFO command pipe (`/tmp/dash_fifo`) for remote control
-- V23 touch state machine: IDLE → PENDING → ACTIVE → HANDLED
-- Gesture detection with direction threshold (horizontal swipe = mode switch)
-- SD card mount-timing retry (3 attempts, 1s interval)
-- Boot-time stdout real-time logging (non-buffered)
-
-## Architecture
-
-```
-main_fb.c          — Entry point, framebuffer init, touch driver, FIFO, main loop
-├── dashboard.c    — 4-mode rendering engine, post_draw_cb, virtual buttons
-├── video_ctrl.c   — MPP hardware decoder, FBIOPAN page flip, timeout watchdog
-├── audio_ctrl.c   — ALSA PCM backend, WAV parser, pthread playback thread
-├── wifi_ctrl.c    — WiFi scanning, AP list, signal monitoring
-├── vehicle_physics.c — 7-speed DSG physics model
-└── ui_config.h    — Layout macros, button hotzones, state machine constants
-```
+### System `[*]`
+- [x] FIFO command pipe (`/tmp/dash_fifo`) for remote control
+- [x] Touch state machine: IDLE → ACTIVE → RELEASE → HANDLED
+- [x] SD card mount-timing retry (3 attempts, 1s interval)
+- [x] Boot-time stdout real-time logging (non-buffered)
+- [ ] OTA firmware update
+- [ ] CAN bus integration
 
 ## Build & Deploy
 
+### Prerequisites
+
+| Dependency | Version |
+|------------|---------|
+| RISC-V cross compiler | `riscv64-unknown-linux-gnu-gcc` V2.10.1 |
+| LVGL | v8.3.10 |
+| Linux kernel | 5.10.44 (Buildroot) |
+| Target libraries | `libmedia_player.so`, `libasound.so`, `libmpp_decoder.so` |
+
+### Compile
+
 ```bash
-# Compile (Ubuntu 18.04 VM, riscv64 cross-toolchain)
+# On Ubuntu 18.04 VM (cross-compile for RISC-V)
 cd ~/lv_sim
 make -f Makefile.d213 -j2
-
-# Binary: ~503KB, dynamically linked
-# Deploy to board via ADB
-python3 -m http.server 8888 &
-adb shell "wget -O /usr/local/bin/dashboard_d213 http://192.168.0.72:8888/dashboard_d213 && sync && reboot"
+# Output: dashboard_d213 (~503KB, dynamically linked)
 ```
 
-### Build Requirements
-- `riscv64-unknown-linux-gnu-gcc` V2.10.1
-- `-O2`, dynamic linking, `rpath=/usr/local/lib`
-- Dependencies: `libmedia_player.so`, `libasound.so`, `libmpp_decoder.so`
+### Deploy to Board
+
+```bash
+# Start HTTP server on VM
+cd ~/lv_sim
+python3 -m http.server 8888 &
+
+# Download and install on board via ADB
+adb shell "killall dashboard_d213; sleep 1; \
+  wget -q -O /usr/local/bin/dashboard_d213 http://192.168.0.72:8888/dashboard_d213 && \
+  sync && reboot"
+
+# Verify
+adb shell "md5sum /usr/local/bin/dashboard_d213"
+```
+
+> **⚠️ Always `sync` before `reboot`** — the binary may not be written to flash otherwise.
+
+### Auto-Start
+
+The board runs Buildroot Linux with BusyBox ash. The dashboard starts automatically via:
+
+```bash
+# /etc/init.d/S00lvgl
+dashboard_d213 < /dev/zero
+```
+
+> **Note**: stdin must be `/dev/zero` (FIFO reads from `/tmp/dash_fifo`, not stdin).
+
+## Project Structure
+
+```
+~/lv_sim/
+├── main_fb.c              ~640 lines    Entry point, framebuffer init, touch, FIFO, main loop
+├── Makefile.d213            30 lines    Cross-compile Makefile (dynamic linking)
+├── ui_config.h              40 lines    Layout macros, state machine constants
+├── lv_conf.h                            LVGL 32bit color depth, 256KB memory pool
+├── dashboard/
+│   ├── dashboard.h/c                  4-mode rendering engine, post_draw_cb, PLAY/STOP, status lines
+│   ├── video_ctrl.h/c                 aic_player, FBIOPAN page flip, first-frame timeout, touch-to-exit
+│   ├── audio_ctrl.h/c                 ALSA snd_pcm, WAV parser, pthread playback, retry logic
+│   ├── wifi_ctrl.h/c                  WiFi scan, reconnect, signal monitoring
+│   └── vehicle_physics.h/c            7-speed DSG physics model
+└── lvgl/                              LVGL v8.3.10
+```
+
+## Directory Structure (Recommended Refactoring)
+
+> **TODO**: Migrate to this layered structure for better maintainability.
+
+```
+d213-dashboard/
+├── drivers/                # Hardware abstraction
+│   ├── display_fb.c        # Framebuffer init, mmap, FBIOPAN
+│   ├── touch_evdev.c       # evdev touch event parser
+│   └── audio_alsa.c        # ALSA PCM wrapper
+├── ui/                     # LVGL rendering
+│   ├── ui_main.c           # Main UI loop
+│   ├── ui_dashboard.c      # Mode 0: gauges, dials
+│   ├── ui_music.c          # Mode 1: playlist, controls
+│   ├── ui_video.c          # Mode 2: video player UI
+│   └── ui_wifi.c           # Mode 3: WiFi panel
+├── media/                  # Multimedia decoders
+│   ├── video_mpp.c         # MPP H.264 decoder wrapper
+│   └── audio_wav.c         # WAV file parser
+├── core/                   # System core
+│   ├── main.c              # Entry point, main loop
+│   ├── state_machine.c     # Touch & mode state machine
+│   └── fifo_cmd.c          # FIFO command dispatcher
+├── configs/                # Configuration
+│   ├── ui_config.h         # Layout, colors, hotspots
+│   └── lv_conf.h           # LVGL config
+├── scripts/                # Build & deploy scripts
+│   └── deploy.sh
+├── docs/                   # Documentation
+├── Makefile                # Build system
+└── README.md
+```
 
 ## Performance
 
@@ -99,31 +206,59 @@ adb shell "wget -O /usr/local/bin/dashboard_d213 http://192.168.0.72:8888/dashbo
 | Video decode FPS | 93 (1280×720 H.264) |
 | Boot time | < 3 seconds |
 | Free memory | 74 MB / 119 MB |
-
-## Known Limitations
-
-- No true video pause (aic_player lacks pause/resume API)
-- Audio supports WAV only (software decoder needed for MP3/FLAC)
-- No video progress bar (MPP lacks duration API, architecture constraint)
-- Touch uses hardcoded coordinates (no LVGL widget interaction)
-- Chinese filenames display as mojibake (montserrat font lacks CJK)
-- No SD card hot-plug detection
+| Code size | ~15,000 lines C |
 
 ## FIFO Commands
 
+The dashboard accepts real-time commands via `/tmp/dash_fifo`:
+
 ```bash
-# Mode switch: q=0, w=1, e=2, r=3
-echo w > /tmp/dash_fifo    # Switch to Music mode
-echo e > /tmp/dash_fifo    # Switch to Video mode
+# ── Global ──
+echo q > /tmp/dash_fifo    # Mode 0 (Dashboard)
+echo w > /tmp/dash_fifo    # Mode 1 (Music)
+echo e > /tmp/dash_fifo    # Mode 2 (Video)
+echo r > /tmp/dash_fifo    # Mode 3 (WiFi)
+echo d > /tmp/dash_fifo    # Toggle ignition
+echo h > /tmp/dash_fifo    # Shift gear (P→N→D→P)
+echo y > /tmp/dash_fifo    # Throttle ON
+echo n > /tmp/dash_fifo    # Throttle OFF
+echo 1 > /tmp/dash_fifo    # Dashboard page 1
+echo 2 > /tmp/dash_fifo    # Dashboard page 2
+echo 3 > /tmp/dash_fifo    # Dashboard page 3
+echo [ > /tmp/dash_fifo    # Left turn signal
+echo ] > /tmp/dash_fifo    # Right turn signal
 
-# Dashboard: 1/2/3=page, d=ignition, h=gear, y/n=throttle, [/]=turn signals
+# ── Mode 1 (Music) ──
+echo b > /tmp/dash_fifo    # Play/Stop toggle
+echo z > /tmp/dash_fifo    # Previous track (wrap to last)
+echo x > /tmp/dash_fifo    # Next track (wrap to first)
+echo p > /tmp/dash_fifo    # Stop
+echo c > /tmp/dash_fifo    # Rescan music directory
 
-# Music: b=play/stop, z=prev, x=next, p=stop, c=rescan
-echo b > /tmp/dash_fifo    # Play/Stop
-
-# Video: b=play, p=stop, c=rescan
+# ── Mode 2 (Video) ──
 echo p > /tmp/dash_fifo    # Stop video
+echo c > /tmp/dash_fifo    # Rescan video directory
 ```
+
+## Known Limitations
+
+| Issue | Root Cause | Workaround |
+|-------|-----------|------------|
+| No true video pause | aic_player lacks pause/resume API | Stop and restart |
+| Audio: WAV only | No software MP3/FLAC decoder integrated | Convert to WAV first |
+| No video progress bar | MPP lacks duration API | Architecture constraint |
+| Chinese filenames garbled | Montserrat font lacks CJK glyphs | Rename files to ASCII |
+| No SD card hot-plug | No inotify on /mnt/sdcard | Reboot after card swap |
+
+## Bug Fixes (v6.0 → v6.4)
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| SD card empty list at boot | Scan runs before SD mount | 3-retry with 1s sleep |
+| Log not visible via ADB | stdout fully buffered | `setbuf(stdout, NULL)` |
+| Video never displays | `g_fb_yres = 0` never assigned | `g_fb_yres = vinfo.yres` |
+| Video stops after 2s | `g_first_video_frame` always 0 | Check `video_playing` instead |
+| Can't exit video playback | No touch-to-exit logic | `goto syn_report_end` on bottom 1/6 touch |
 
 ## Project Timeline
 
@@ -137,6 +272,35 @@ echo p > /tmp/dash_fifo    # Stop video
 | Jul 4  | v6.1 audio/video UI overhaul, v6.3 fullscreen touch-to-exit |
 | Jul 7  | v6.4 cleanup (dead code removal, volatile fix) |
 
+## Demo
+
+> **TODO**: Add screen recordings or GIFs for each mode:
+> - [ ] Boot animation (2.4s self-test sweep)
+> - [ ] Mode 0 → Mode 3 switching
+> - [ ] Music playback with progress bar
+> - [ ] Video playback with touch-to-exit
+
+## Contributing
+
+This project follows [GitHub Flow](https://guides.github.com/introduction/flow/).
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/your-feature`)
+3. Make your changes with clear commit messages
+4. Push and open a Pull Request
+
+### Commit Convention
+
+```
+<type>: <short description>
+
+<type>: feat | fix | docs | refactor | test | chore
+```
+
 ## License
 
-This project is my personal work. The ArtInChip SDK components (lvgl-ui test files) retain their original Apache-2.0 license.
+[Apache-2.0](LICENSE) — Copyright (c) 2026 langoogg
+
+---
+
+**Acknowledgments**: [ArtInChip](https://www.artinchip.com/) for the D21x SDK, [LVGL](https://lvgl.io/) for the embedded GUI framework, and the RISC-V open-source community.
